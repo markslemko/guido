@@ -6,13 +6,16 @@
 
    refined 2015-10-17
      - adjusted to accomodate shorter distance
+   refined 2021-01-31
+     - adjusted to clarify code, clean up, and to work on arduino pro mini
+
 */
 
 #include <math.h>
 #include <SoftwareSerial.h>
 SoftwareSerial Serial7Segment(8, 9); //RX pin, TX pin
 
-int pingPin = 2;    // select the input pin for the potentiometer
+int pingPin = 3;    // select the input pin for the potentiometer
 int ledPin = 13;      // select the pin for the LED
 
 int colorR = 7;
@@ -21,13 +24,13 @@ int colorG = 4;
 int colorB = 5;
 
 
-int settleTime = 20000; // when same value is reached for this time, stop checking as often
+int settleTime = 5000; // when same value is reached for this time, stop checking as often
 int recheckTime = 0;
 int timer = 0;
 double settleDistance = 0.0;
 double variance = 2.0;
 
-#define STOP_DISTANCE     70.0
+#define STOP_DISTANCE     80.0
 #define STOP_BRACKET      6.0
 #define MAX_RECHECK_TIME  2000
 #define NORMAL_RECHECK_TIME 100
@@ -108,28 +111,23 @@ void loop() {
   digitalWrite(ledPin, LOW); // turn the ledPin off:        
   Serial.print(" wait ");
 
-  // when objects are further away, make the between pings a bit longer
-  timer += (int)distance + NORMAL_RECHECK_TIME;
+  bool settledTimeReached = checkSettleTimeReached(distance);
+  timer += NORMAL_RECHECK_TIME; // increment timer
 
-  // check if settle time reached
-  if (checkSettleTimeReached(distance)) {
-    // turn off stop LED
+  // check if settle time reached to turn off LED
+  if (settledTimeReached) {
+    // turn off LED
     setColor( LOW, LOW, LOW);
     
-    recheckTime = timer * 2;
+    recheckTime = timer;
     if (recheckTime < settleTime) {
       if (recheckTime > MAX_RECHECK_TIME) {
         recheckTime = MAX_RECHECK_TIME;
       }
-    } 
-    
-    if (recheckTime < 10) {
-      recheckTime = NORMAL_RECHECK_TIME;
+    } else {
+      timer = recheckTime = settleTime;
     }
     
-    Serial.print(" delay recheck ");
-    Serial.print(timer);
-    delay(recheckTime); // wait for next check
     
     // turn off RGBLED
     setColor( LOW, LOW, LOW);
@@ -141,16 +139,23 @@ void loop() {
       if (distance < (STOP_DISTANCE - STOP_BRACKET)) {
         // too close - blue on
         setColor( LOW, LOW, HIGH);
+        Serial.print(" too close ");
       } else if (distance > (STOP_DISTANCE + STOP_BRACKET)) {
         // too far - green on
         setColor( LOW, HIGH, LOW);
+        Serial.print(" too far ");
       } else  {
         // perfect - red on
         setColor( HIGH, LOW, LOW);
+        Serial.print(" stop ");
       }
     }
-    delay(NORMAL_RECHECK_TIME);
   }
+  
+  Serial.print(" delay recheck ");
+  Serial.print(timer);
+  delay(recheckTime); // wait for next check
+  
   Serial.println("");
 }
 
@@ -164,9 +169,12 @@ boolean shouldShowStopLED(double distance) {
 
 boolean checkSettleTimeReached(double distance) {
   boolean delta = abs(settleDistance - distance) > (variance * (1.0 +  distance / 100.0));
+  
+  // if the delta is too big, reset the timer
   if (delta) {
     timer = 0;
   }
+  
   if (timer < settleTime) {
     settleDistance = distance;
     return false;
